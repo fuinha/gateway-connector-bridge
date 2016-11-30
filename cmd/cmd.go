@@ -15,6 +15,7 @@ import (
 	"github.com/TheThingsNetwork/gateway-connector-bridge/auth"
 	"github.com/TheThingsNetwork/gateway-connector-bridge/backend/amqp"
 	"github.com/TheThingsNetwork/gateway-connector-bridge/backend/mqtt"
+	"github.com/TheThingsNetwork/gateway-connector-bridge/backend/pktfwd"
 	"github.com/TheThingsNetwork/gateway-connector-bridge/backend/ttn"
 	"github.com/TheThingsNetwork/gateway-connector-bridge/exchange"
 	"github.com/TheThingsNetwork/go-utils/handlers/cli"
@@ -119,6 +120,22 @@ func runBridge(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Set up the PktFwd backends (from comma-separated list of bind addresses)
+	pktFwdBinds := strings.Split(config.GetString("pkt-fwd"), ",")
+	for _, pktFwdBind := range pktFwdBinds {
+		if pktFwdBind == "disable" {
+			continue
+		}
+		ctx.WithField("BindAddr", pktFwdBind).Infof("Initializing PktFwd")
+		pktFwd, err := pktfwd.New(pktfwd.Config{
+			UDPBind: pktFwdBind,
+		}, ctx)
+		if err != nil {
+			ctx.WithError(err).Warnf("Could not initialize PktFwd %s", pktFwdBind)
+		}
+		bridge.AddSouthbound(pktFwd)
+	}
+
 	// Set up the MQTT backends (from comma-separated list of user:pass@host:port)
 	mqttRegexp := regexp.MustCompile(`^(?:([0-9a-z_-]+)(?::([0-9A-Za-z-!"#$%&'()*+,.:;<=>?@[\]^_{|}~]+))?@)?([0-9a-z.-]+:[0-9]+)$`)
 	mqttBrokers := strings.Split(config.GetString("mqtt"), ",")
@@ -181,6 +198,7 @@ func init() {
 	BridgeCmd.Flags().String("account-server", "https://preview.account.thethingsnetwork.org", "Use an account server for exchanging access keys")
 
 	BridgeCmd.Flags().StringSlice("ttn-router", []string{"discovery.thethingsnetwork.org:1900/ttn-router-eu"}, "TTN Router to connect to")
+	BridgeCmd.Flags().StringSlice("pkt-fwd", []string{":1700"}, "PktFwd to start")
 	BridgeCmd.Flags().StringSlice("mqtt", []string{"guest:guest@localhost:1883"}, "MQTT Broker to connect to (disable with \"disable\")")
 	BridgeCmd.Flags().StringSlice("amqp", []string{"guest:guest@localhost:5672"}, "AMQP Broker to connect to (disable with \"disable\")")
 
