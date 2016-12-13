@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,6 +20,8 @@ import (
 	"github.com/TheThingsNetwork/gateway-connector-bridge/backend/ttn"
 	"github.com/TheThingsNetwork/gateway-connector-bridge/exchange"
 	"github.com/TheThingsNetwork/go-utils/handlers/cli"
+	ttnlog "github.com/TheThingsNetwork/go-utils/log"
+	"github.com/TheThingsNetwork/go-utils/log/apex"
 	"github.com/TheThingsNetwork/ttn/api"
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/json"
@@ -92,7 +95,18 @@ func runBridge(cmd *cobra.Command, args []string) {
 	// Set up the TTN routers (from comma-separated list of discovery-server/router-id)
 	ttnRouters := strings.Split(config.GetString("ttn-router"), ",")
 	if len(ttnRouters) > 0 {
-		api.SetLogger(api.Apex(ctx))
+		if rootCAFile := config.GetString("root-ca-file"); rootCAFile != "" {
+			roots, err := ioutil.ReadFile(rootCAFile)
+			if err != nil {
+				ctx.WithError(err).Fatal("Could not load Root CA file")
+			}
+			if !api.RootCAs.AppendCertsFromPEM(roots) {
+				ctx.Warn("Could not load all CAs from the Root CA file")
+			} else {
+				ctx.Infof("Using Root CAs from %s", rootCAFile)
+			}
+		}
+		ttnlog.Set(apex.Wrap(ctx))
 	}
 	for _, ttnRouter := range ttnRouters {
 		if ttnRouter == "disable" {
@@ -194,6 +208,8 @@ func init() {
 	BridgeCmd.Flags().String("redis-address", "localhost:6379", "Redis host and port")
 	BridgeCmd.Flags().String("redis-password", "", "Redis password")
 	BridgeCmd.Flags().Int("redis-db", 0, "Redis database")
+
+	BridgeCmd.Flags().String("root-ca-file", "", "Location of the file containing Root CA certificates")
 
 	BridgeCmd.Flags().String("account-server", "https://preview.account.thethingsnetwork.org", "Use an account server for exchanging access keys")
 
